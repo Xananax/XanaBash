@@ -1,0 +1,199 @@
+#! /bin/bash
+
+usage(){
+cat << EOF
+
+Sends and restores files to and from the recycle bin
+Usage: rm [options] file1 [file2] ...
+Files can be either files or directories
+
+	Options:
+	 -v         verbose mode
+	 -h         this help message
+	 -n         dry run
+	 -r         restore the file(s) specified
+	 -e         empties the bin
+	 -s         stop on errors
+	 -u         undo last batch
+	 -d <DIR>   specify the recycle directory
+	            (defaults to '.recycle' in your ~)
+	 All other options are ignored when moving files. When removing
+	 permanently, these options are passed to /bin/rm
+
+EOF
+}
+
+FILES=""
+VERBOSE=0
+DRY=0
+RESTORE=0
+ERRORSTOP=0
+TROOT="$HOME"
+UNDO=0
+RBIN=".recycle"
+CURR=`pwd`
+EMPTY=0
+UNDOFILE=
+
+while getopts “hvnrsued:” OPTION
+do
+     case $OPTION in
+         h)
+             usage
+             exit 0
+             ;;
+         v)
+             VERBOSE=1
+             ;;
+         n)
+             DRY=1
+             ;;
+         r)
+             RESTORE=1
+             ;;
+		 u)
+			 UNDO=1
+			 ;;
+         d)
+             RBIN=$OPTARG
+             ;;
+		 e) 
+			 EMPTY=1
+			 ;;
+		 s)
+			 ERRORSTOP=1
+			 ;;
+         ?)
+			 echo "Invalid option: -$OPTARG" >&2
+             usage
+             exit 1
+             ;;
+     esac
+done
+
+#setting the undo file name, will be ~/.recycle-log by default
+UNDOFILE=$TROOT/$RBIN"-log"
+#setting full path for the recycle bin dir
+RBIN="$TROOT/$RBIN"
+
+if [ "$VERBOSE" = 1 ]; then
+	echo "recycle dir: $RBIN"
+	echo "current dir: $CURR"
+fi
+
+# creating the recycle bin dir if it does not exist
+test -d "$RBIN" || mkdir -p "$RBIN"
+
+if [ ! -d "$RBIN" ]; then
+	echo "could not create the directory $RBIN" >&2
+	exit 1
+fi
+
+# if -u was passed, undo and exit
+if [ "$UNDO" = 1 ]; then
+	if [ -f "$UNDOFILE" ]; then
+		source $UNDOFILE
+		rm $UNDOFILE
+		echo "undone" >&2
+		exit 0
+	else
+		echo "no undo file found, cannot undo" >&2
+		exit 1
+	fi
+fi
+
+# resetting undo file for changes to come
+if [ -f "$UNDOFILE" ]; then
+	rm $UNDOFILE
+fi
+
+shift $(( OPTIND - 1 ))
+
+# if -e or -u were passed, no arguments is ok
+# if not, then the used should provide at least
+# one filename
+if [ "$EMPTY" = 0 ]; then
+	if [ -z "$1" ]; then
+		echo "you should pass at least one filename" >&2
+		echo "use -h for help" >&2
+		exit 1
+	fi
+else
+	# if -e was passed, empty the directory
+	if [ "$DRY" = 0 ]; then
+		rm -r "$RBIN"
+		mkdir -p "$RBIN"
+	fi
+	if [ "$VERBOSE" = 1 ]; then
+		echo "bin emptied" >&2
+	fi
+	exit 0
+fi
+
+# setting the in and out dir
+# By default, in is the current dir and out is the bin dir
+IN="$CURR"
+OUT="$RBIN"
+
+# but if -r was passed, switch them
+if [ "$RESTORE" = 1 ]; then
+	let IN="$RBIN"
+	let OUT="$CURR"
+fi
+
+if [ "$IN" = "$OUT" ]; then
+	echo "Error: you are trying to move files to same directory" >&2
+	exit 1
+fi
+
+orig=
+dest=
+
+# preparing undo file
+touch $UNDOFILE
+
+while [ "$1" ]; do
+
+	orig="$IN/$(basename $1)"
+	dest="$OUT/$(basename $1)"
+
+    if [ "$DRY" = 1 ]; then
+		if [ "$RESTORE" = 1 ]; then
+            echo "restore $orig" >&2
+		else
+			echo "delete $orig" >&2
+		fi
+	fi
+	if [ -e "$orig" ]; then
+		# if file already exists, rename it by appending a number
+		if [ -e "$dest" ]; then
+			version=2
+			while [ -e "$dest$version" ]; do
+				let version=$version+1
+			done
+			if [ "$DRY" = 0 ]; then
+				mv "$dest" "$dest$version"
+				echo "mv $dest$version $dest" >> $UNDOFILE
+			fi
+			if [ "$VERBOSE" = 1 ];then
+				echo "moving old existing $dest to $dest$version" >&2
+			fi
+		fi
+		if [ "$DRY" = 0 ]; then
+			mv "$orig" "$dest"
+			echo "mv $dest $orig" >> $UNDOFILE
+		fi
+		if [ "$VERBOSE" = 1 ]; then
+			echo "$orig → $dest" >&2
+		fi
+	else
+		if [ "$VERBOSE" = 1 ]; then
+			echo "file '$(basename $1)' could not be processed" >&2
+		fi
+		if [ "$ERRORSTOP" = 1 ]; then
+			echo "there were errors" >&2
+			exit 1
+		fi
+	fi
+	shift
+done

@@ -1,0 +1,52 @@
+#! /bin/bash
+
+usage(){
+cat << EOF
+
+Wrapper for apt-get, logs everything in files
+so you can just run these files on next install
+Usage: inst [package]
+
+	Options:
+	 -s         search for a package
+	 -h         this help message
+	 -e         simply runs the command provided and logs it
+
+EOF
+}
+
+SEARCH=0
+EXTERNAL=0
+
+while getopts hse OPTION
+do
+     case $OPTION in
+         h)
+             usage
+             exit 0
+             ;;
+         s)
+             SEARCH=1
+             ;;
+         e)
+             EXTERNAL=1
+             ;;
+         ?)
+			 echo "Invalid option: -$OPTARG" >&2
+             usage
+             exit 1
+             ;;
+     esac
+done
+
+shift $(( OPTIND - 1 ))
+
+if [ "$SEARCH" = 1 ]; then
+	sudo apt-cache search "$@" | grep -Ev 'transitional dummy package' | less
+elif [ "$EXTERNAL" = 1 ]; then
+	sudo $@ && echo "$@" >> ~/.install-ext.log
+else
+	sudo apt-get install -y $@ && echo "$(cat ~/.install.log) $@" > ~/.install.log
+fi
+
+

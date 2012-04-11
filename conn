@@ -1,0 +1,43 @@
+#!/bin/bash
+
+sudo /etc/init.d/network-manager stop
+
+
+echo "which network interface? (eth0,eth1..)"
+read netInterface
+sudo ifconfig $netInterface down
+sudo ifconfig $netInterface up
+echo "scan for wifi? y/n"
+read scan
+if [ "$scan" == "y" ]; then
+sudo iwlist scanning
+fi
+
+#enter the ssid
+echo "enter ESSID:"
+read essid
+echo "wep or wpa?"
+read wifiType
+if [ "$wifiType" == "wep" ]; then
+#wep stuff
+sudo iwconfig $netInterface essid $essid
+elif [ "$wifiType" == "wpa" ]; then
+#wpa stuff
+echo "create config file? (y/n)"
+read createConfig
+if [ "$createConfig" == "y" ]; then
+#create a config file
+echo "enter the password:"
+read password
+wpaconfig=wpaconfig_$essid
+wpa_passphrase $essid $password > $wpaconfig
+sudo wpa_supplicant -i$netInterface -c$wpaconfig
+elif [ "$createConfig" == "n" ]; then
+#use an existing config file
+echo "which wpaconfig file?"
+ls
+read wpaconfig
+sudo wpa_supplicant -i$netInterface -c$wpaconfig
+fi
+fi
+sudo dhclient $netInterface
