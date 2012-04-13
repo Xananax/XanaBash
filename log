@@ -1,0 +1,95 @@
+#!/bin/bash
+
+usage(){
+cat << EOF
+
+Logs stuff. Can be used for notes or whatevs.
+Run without args to read all notes
+
+	Options:
+	 -s           in particular section
+	 -d <section> remove a section
+	 -r	<line>	  remove a line
+	 -h           this help message
+
+EOF
+}
+
+SECTION="general"
+REMOVE=0
+HASSETSECTION=0
+LOGDIR="logs"
+REMOVELINE=0
+LINE=0
+LOGDIR="$HOME/$LOGDIR"
+
+while getopts d:s:r: OPTION
+do
+     case $OPTION in
+         h)
+             usage
+             exit 0
+             ;;
+         s)
+             SECTION=$OPTARG
+			 HASSETSECTION=1
+             ;;
+         d)  SECTION=$OPTARG
+			 REMOVE=1
+			 ;;
+		 r)
+			 REMOVELINE=1
+			 LINE=$OPTARG
+			 ;;
+         ?)
+			 echo "Invalid option: -$OPTARG" >&2
+             usage
+             exit 1
+             ;;
+     esac
+done
+
+shift $(( OPTIND - 1 ))
+
+CURRFILE="$LOGDIR/$SECTION"
+
+if [ "$REMOVE" = 1 ]; then
+	rm "$CURRFILE" && echo "$(basename $CURRFILE) removed"
+	exit 0
+fi
+
+
+if [ "$REMOVELINE" = 1 ]; then
+	sed -i "$LINE  d" $CURRFILE
+	HASSETSECTION=1
+fi
+
+if [ ! -n "$1" ]; then
+	FILES=$LOGDIR/*
+	if [ "$HASSETSECTION" = 1 ]; then
+		FILES=$CURRFILE
+	fi
+	for f in $FILES; do
+		if [ ! -d "$f" ]; then
+			echo ""
+			echo "--- [ $(basename $f) ] ----"
+			nmb=0
+			for line in $(cat $f); do
+				let nmb=$nmb+1
+				echo "$nmb $line" 
+			done
+		fi
+	done
+	exit 0
+fi
+
+
+test -d "$LOGDIR" || mkdir -p "$LOGDIR"
+
+if [ ! -d "$LOGDIR" ]; then
+	echo "could not create the directory $LOGDIR" >&2
+	exit 1
+fi
+
+echo "$@" >> $CURRFILE
+
